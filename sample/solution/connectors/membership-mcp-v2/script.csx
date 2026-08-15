@@ -60,6 +60,10 @@ public class Script : ScriptBase
     // prorated refund = months_remaining x (annual_price / 12) - cancellation_fee
     // - nonrefundable_credit, unless the cooling-off rule applies (activated <= 14
     // days ago AND hours_streamed < 2 -> full refund of annual_price).
+    //
+    // activation_date/term_end_date are NOT stored — they are derived at request
+    // time from months_remaining relative to "today" (12-month term), so the
+    // demo data never goes stale no matter when this script runs.
 
     private static readonly JArray Memberships = JArray.Parse(@"[
         {
@@ -71,8 +75,6 @@ public class Script : ScriptBase
             ""annual_price"":129.99,
             ""cancellation_fee"":10.00,
             ""nonrefundable_credit"":0.00,
-            ""activation_date"":""2026-02-26"",
-            ""term_end_date"":""2027-02-26"",
             ""months_remaining"":8,
             ""hours_streamed"":47.5,
             ""blast_points"":4200,
@@ -88,8 +90,6 @@ public class Script : ScriptBase
             ""annual_price"":199.99,
             ""cancellation_fee"":25.00,
             ""nonrefundable_credit"":20.00,
-            ""activation_date"":""2026-05-30"",
-            ""term_end_date"":""2027-05-30"",
             ""months_remaining"":11,
             ""hours_streamed"":1.2,
             ""blast_points"":15600,
@@ -105,8 +105,6 @@ public class Script : ScriptBase
             ""annual_price"":79.99,
             ""cancellation_fee"":0.00,
             ""nonrefundable_credit"":0.00,
-            ""activation_date"":""2025-12-10"",
-            ""term_end_date"":""2026-12-10"",
             ""months_remaining"":6,
             ""hours_streamed"":88.0,
             ""blast_points"":9050,
@@ -122,8 +120,6 @@ public class Script : ScriptBase
             ""annual_price"":199.99,
             ""cancellation_fee"":25.00,
             ""nonrefundable_credit"":20.00,
-            ""activation_date"":""2026-01-05"",
-            ""term_end_date"":""2027-01-05"",
             ""months_remaining"":5,
             ""hours_streamed"":210.0,
             ""blast_points"":33700,
@@ -147,8 +143,11 @@ public class Script : ScriptBase
                 {
                     if (string.Equals(m["customer_id"]?.ToString(), id, StringComparison.OrdinalIgnoreCase))
                     {
-                        var activation = DateTime.Parse(m["activation_date"].ToString());
-                        var daysSince = (int)(DateTime.UtcNow.Date - activation.Date).TotalDays;
+                        const int termMonths = 12;
+                        var monthsRemaining = m["months_remaining"]?.Value<int>() ?? 0;
+                        var activation = DateTime.UtcNow.Date.AddMonths(-(termMonths - monthsRemaining));
+                        var termEnd = activation.AddMonths(termMonths);
+                        var daysSince = (int)(DateTime.UtcNow.Date - activation).TotalDays;
                         var hours = m["hours_streamed"]?.Value<double>() ?? 0;
                         var coolingOff = daysSince <= 14 && daysSince >= 0 && hours < 2;
                         return new JObject
@@ -161,8 +160,8 @@ public class Script : ScriptBase
                             ["annual_price"] = m["annual_price"],
                             ["cancellation_fee"] = m["cancellation_fee"],
                             ["nonrefundable_credit"] = m["nonrefundable_credit"],
-                            ["activation_date"] = m["activation_date"],
-                            ["term_end_date"] = m["term_end_date"],
+                            ["activation_date"] = activation.ToString("yyyy-MM-dd"),
+                            ["term_end_date"] = termEnd.ToString("yyyy-MM-dd"),
                             ["days_since_activation"] = daysSince,
                             ["months_remaining"] = m["months_remaining"],
                             ["hours_streamed"] = m["hours_streamed"],

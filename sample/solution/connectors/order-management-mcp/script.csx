@@ -58,7 +58,7 @@ public class Script : ScriptBase
         {""id"":""ORD-10460"",""customer"":{""id"":""C-002"",""name"":""James Rivera"",""email"":""j.rivera@example.com""},""date"":""2026-04-18"",""status"":""processing"",""items"":[{""sku"":""SKU-SWITCH"",""name"":""Nintendo Switch OLED"",""quantity"":1,""unitPrice"":349.99},{""sku"":""SKU-ZELDA"",""name"":""The Legend of Zelda: Tears of the Kingdom"",""quantity"":1,""unitPrice"":59.99}],""shippingAddress"":""88 Sunset Blvd, Apt 4B, Los Angeles, CA 90028"",""paymentMethod"":""Mastercard ending in 8811"",""total"":409.98},
         {""id"":""ORD-10389"",""customer"":{""id"":""C-003"",""name"":""Emily Chen"",""email"":""emily.chen@example.com""},""date"":""2026-03-28"",""status"":""delivered"",""items"":[{""sku"":""SKU-DUNE2"",""name"":""Dune: Part Two (4K Blu-ray)"",""quantity"":1,""unitPrice"":29.99},{""sku"":""SKU-FOUNDATION"",""name"":""Foundation (Isaac Asimov) - Paperback"",""quantity"":1,""unitPrice"":12.99},{""sku"":""SKU-3BODY"",""name"":""The Three-Body Problem - Paperback"",""quantity"":1,""unitPrice"":14.99}],""shippingAddress"":""1200 Main Street, Unit 7C, Seattle, WA 98101"",""paymentMethod"":""Amex ending in 3003"",""total"":57.97},
         {""id"":""ORD-10478"",""customer"":{""id"":""C-003"",""name"":""Emily Chen"",""email"":""emily.chen@example.com""},""date"":""2026-04-14"",""status"":""shipped"",""items"":[{""sku"":""SKU-ERGOCHAIR"",""name"":""ErgoMax Office Chair - Mesh Back"",""quantity"":1,""unitPrice"":299.00}],""shippingAddress"":""1200 Main Street, Unit 7C, Seattle, WA 98101"",""paymentMethod"":""Amex ending in 3003"",""total"":299.00},
-        {""id"":""ORD-10502"",""customer"":{""id"":""C-004"",""name"":""Jordan Pixel"",""email"":""jordan.pixel@example.com""},""date"":""2026-06-09"",""status"":""delivered"",""items"":[{""sku"":""SKU-OMEGA"",""name"":""BlastBox Omega Console"",""quantity"":1,""unitPrice"":399.99}],""shippingAddress"":""15 Arcade Lane, Pixel Heights, WA 98052"",""paymentMethod"":""Visa ending in 1024"",""total"":399.99}
+        {""id"":""ORD-10502"",""customer"":{""id"":""C-004"",""name"":""Jordan Pixel"",""email"":""jordan.pixel@example.com""},""date"":""2026-04-09"",""status"":""delivered"",""items"":[{""sku"":""SKU-OMEGA"",""name"":""BlastBox Omega Console"",""quantity"":1,""unitPrice"":399.99}],""shippingAddress"":""15 Arcade Lane, Pixel Heights, WA 98052"",""paymentMethod"":""Visa ending in 1024"",""total"":399.99}
     ]");
 
     private static readonly JObject Shipments = JObject.Parse(@"{
@@ -74,6 +74,49 @@ public class Script : ScriptBase
     }");
 
     private static int _returnCounter = 50019;
+
+    // ── Dynamic Date Shifting ───────────────────────────────────────────
+    //
+    // The mock order/shipment dates above were authored assuming "today" is
+    // 2026-04-18. Rather than go stale, every date is re-anchored to the
+    // actual current date using the same day offsets, so the demo always
+    // looks fresh no matter when this script runs.
+
+    private static string D(int offsetDays) => DateTime.UtcNow.Date.AddDays(offsetDays).ToString("yyyy-MM-dd");
+    private static string Dt(int offsetDays, int hour, int minute) =>
+        DateTime.UtcNow.Date.AddDays(offsetDays).AddHours(hour).AddMinutes(minute).ToString("yyyy-MM-ddTHH:mm:ssZ");
+
+    static Script()
+    {
+        SetField(Orders, "id", "ORD-10421", "date", D(-8));
+        SetField(Orders, "id", "ORD-10422", "date", D(-3));
+        SetField(Orders, "id", "ORD-10318", "date", D(-27));
+        SetField(Orders, "id", "ORD-10455", "date", D(-6));
+        SetField(Orders, "id", "ORD-10460", "date", D(0));
+        SetField(Orders, "id", "ORD-10389", "date", D(-21));
+        SetField(Orders, "id", "ORD-10478", "date", D(-4));
+        SetField(Orders, "id", "ORD-10502", "date", D(52));
+
+        SetShipmentDates("ORD-10421", D(4), Dt(2, 14, 30));
+        SetShipmentDates("ORD-10455", D(3), Dt(1, 9, 15));
+        SetShipmentDates("ORD-10318", D(-21), Dt(-21, 10, 15));
+        SetShipmentDates("ORD-10478", D(6), Dt(3, 10, 0));
+    }
+
+    private static void SetField(JArray array, string idField, string idValue, string field, string value)
+    {
+        foreach (var item in array)
+            if (item[idField]?.ToString() == idValue) { item[field] = value; return; }
+    }
+
+    private static void SetShipmentDates(string orderId, string estimatedDelivery, string lastUpdate)
+    {
+        if (Shipments[orderId] is JObject shipment)
+        {
+            shipment["estimated_delivery"] = estimatedDelivery;
+            shipment["last_update"] = lastUpdate;
+        }
+    }
 
     // ── Tool Registration ───────────────────────────────────────────────
 

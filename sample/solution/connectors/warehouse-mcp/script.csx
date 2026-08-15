@@ -80,7 +80,7 @@ public class Script : ScriptBase
     }");
 
     private static readonly JArray Restock = JArray.Parse(@"[
-        {""sku"":""SKU-OMEGA"",""name"":""BlastBox Omega Console"",""current_quantity"":0,""next_shipment_date"":""2026-06-11"",""expected_quantity"":40,""supplier"":""BlastBox Manufacturing"",""notes"":""Standard replenishment — next batch arrives in about 4 days. MEGA Edition is in stock now as an upgrade alternative.""},
+        {""sku"":""SKU-OMEGA"",""name"":""BlastBox Omega Console"",""current_quantity"":0,""next_shipment_date"":""2026-04-22"",""expected_quantity"":40,""supplier"":""BlastBox Manufacturing"",""notes"":""Standard replenishment — next batch arrives in about 4 days. MEGA Edition is in stock now as an upgrade alternative.""},
         {""sku"":""SKU-LUMI"",""name"":""LumiRead E-Reader (16GB)"",""current_quantity"":0,""next_shipment_date"":""2026-04-22"",""expected_quantity"":50,""supplier"":""LumiRead Distribution Co."",""notes"":""Delayed from original April 18 date. Supplier confirmed new ETA.""},
         {""sku"":""SKU-VORTEX"",""name"":""Vortex Gaming Console OLED"",""current_quantity"":0,""next_shipment_date"":""2026-04-28"",""expected_quantity"":30,""supplier"":""Vortex Games Inc."",""notes"":""High demand — limited allocation. Next batch after this is mid-May.""},
         {""sku"":""SKU-APEX5"",""name"":""Apex NoiseGuard 5 Headphones"",""current_quantity"":3,""next_shipment_date"":""2026-05-05"",""expected_quantity"":20,""supplier"":""Apex Audio Corp."",""notes"":""Regular replenishment cycle. Current stock sufficient for 1-2 weeks.""},
@@ -117,14 +117,94 @@ public class Script : ScriptBase
 
     // Inventory aging / inbound status for merchandising markdown decisions.
     private static readonly JArray Aging = JArray.Parse(@"[
-        {""sku"":""SKU-OMEGA-MEGA"",""name"":""BlastBox Omega MEGA Edition"",""weeks_in_stock"":3,""received_date"":""2026-05-11"",""inbound_po"":true,""next_inbound_date"":""2026-06-15"",""aging_bucket"":""fresh"",""note"":""Hot seller. Replenishment PO inbound.""},
-        {""sku"":""SKU-MEGALIZARDS"",""name"":""MEGA Lizards from Outer Space"",""weeks_in_stock"":4,""received_date"":""2026-05-04"",""inbound_po"":true,""next_inbound_date"":""2026-06-12"",""aging_bucket"":""fresh"",""note"":""AAA title driving MEGA Edition attach. Reorder inbound.""},
+        {""sku"":""SKU-OMEGA-MEGA"",""name"":""BlastBox Omega MEGA Edition"",""weeks_in_stock"":3,""received_date"":""2026-04-15"",""inbound_po"":true,""next_inbound_date"":""2026-04-28"",""aging_bucket"":""fresh"",""note"":""Hot seller. Replenishment PO inbound.""},
+        {""sku"":""SKU-MEGALIZARDS"",""name"":""MEGA Lizards from Outer Space"",""weeks_in_stock"":4,""received_date"":""2026-04-08"",""inbound_po"":true,""next_inbound_date"":""2026-04-22"",""aging_bucket"":""fresh"",""note"":""AAA title driving MEGA Edition attach. Reorder inbound.""},
         {""sku"":""SKU-PULSE-CTRL"",""name"":""PulseGrip Pro Controller"",""weeks_in_stock"":5,""received_date"":""2026-04-27"",""inbound_po"":true,""next_inbound_date"":""2026-06-20"",""aging_bucket"":""fresh"",""note"":""Steady accessory attach.""},
         {""sku"":""SKU-OMEGA-CORE"",""name"":""BlastBox Omega Core (1st-gen)"",""weeks_in_stock"":16,""received_date"":""2026-02-16"",""inbound_po"":false,""next_inbound_date"":null,""aging_bucket"":""aging"",""note"":""Being phased out by the MEGA Edition. No further inbound — candidate for discontinuation/clearance.""},
         {""sku"":""SKU-RETRO-CADET"",""name"":""BlastBox Cadet Bundle"",""weeks_in_stock"":22,""received_date"":""2026-01-05"",""inbound_po"":false,""next_inbound_date"":null,""aging_bucket"":""stale"",""note"":""Last-gen bundle. No inbound. Strong markdown candidate.""},
         {""sku"":""SKU-GALAXY-SMASH"",""name"":""Galaxy Smash"",""weeks_in_stock"":14,""received_date"":""2026-03-02"",""inbound_po"":false,""next_inbound_date"":null,""aging_bucket"":""aging"",""note"":""Overstocked at launch. No inbound. Markdown candidate.""},
         {""sku"":""SKU-VR-GOGGLES"",""name"":""OmegaVision VR Headset"",""weeks_in_stock"":18,""received_date"":""2026-02-02"",""inbound_po"":false,""next_inbound_date"":null,""aging_bucket"":""stale"",""note"":""Slow launch. No inbound. Strong markdown/clearance candidate.""}
     ]");
+
+    // ── Dynamic Date Shifting ───────────────────────────────────────────
+    //
+    // The mock dates above were authored assuming "today" is 2026-04-18
+    // (fulfillment/restock) or roughly eight weeks later (aging). Rather than
+    // go stale, they're re-anchored to the actual current date at load time:
+    // fulfillment/restock use the same day offsets, and aging's received_date
+    // is derived directly from weeks_in_stock so it always matches "today".
+
+    private static string D(int offsetDays) => DateTime.UtcNow.Date.AddDays(offsetDays).ToString("yyyy-MM-dd");
+    private static string Dt(int offsetDays, int hour, int minute) =>
+        DateTime.UtcNow.Date.AddDays(offsetDays).AddHours(hour).AddMinutes(minute).ToString("yyyy-MM-ddTHH:mm:ssZ");
+
+    static Script()
+    {
+        SetFulfillmentDates("ORD-10422", D(5), new[] { ("received", Dt(-3, 9, 30)) });
+        SetFulfillmentDates("ORD-10460", D(3), new[] { ("received", Dt(0, 10, 0)), ("picked", Dt(1, 14, 20)) });
+        SetFulfillmentDates("ORD-10421", D(-5), new[]
+        {
+            ("received", Dt(-7, 8, 0)),
+            ("picked", Dt(-7, 11, 30)),
+            ("packed", Dt(-6, 9, 15)),
+            ("labeled", Dt(-6, 10, 0)),
+            ("handed_to_carrier", Dt(-5, 8, 45))
+        });
+        SetFulfillmentDates("ORD-10455", D(-4), new[]
+        {
+            ("received", Dt(-6, 11, 0)),
+            ("picked", Dt(-5, 9, 0)),
+            ("packed", Dt(-5, 14, 30)),
+            ("labeled", Dt(-4, 8, 0)),
+            ("handed_to_carrier", Dt(-4, 15, 0))
+        });
+
+        SetField(Restock, "sku", "SKU-OMEGA", "next_shipment_date", D(54));
+        SetField(Restock, "sku", "SKU-LUMI", "next_shipment_date", D(4));
+        SetField(Restock, "sku", "SKU-VORTEX", "next_shipment_date", D(10));
+        SetField(Restock, "sku", "SKU-APEX5", "next_shipment_date", D(17));
+        SetField(Restock, "sku", "SKU-COMFT", "next_shipment_date", D(12));
+
+        SetAgingDates("SKU-OMEGA-MEGA", 3, D(7));
+        SetAgingDates("SKU-MEGALIZARDS", 4, D(4));
+        SetAgingDates("SKU-PULSE-CTRL", 5, D(12));
+        SetAgingDates("SKU-OMEGA-CORE", 16, null);
+        SetAgingDates("SKU-RETRO-CADET", 22, null);
+        SetAgingDates("SKU-GALAXY-SMASH", 14, null);
+        SetAgingDates("SKU-VR-GOGGLES", 18, null);
+    }
+
+    private static void SetField(JArray array, string idField, string idValue, string field, string value)
+    {
+        foreach (var item in array)
+            if (item[idField]?.ToString() == idValue) { item[field] = value; return; }
+    }
+
+    private static void SetFulfillmentDates(string orderId, string estimatedShipDate, (string stage, string completedAt)[] stages)
+    {
+        if (!(Fulfillment[orderId] is JObject order)) return;
+        order["estimated_ship_date"] = estimatedShipDate;
+        var pipeline = order["pipeline"] as JArray;
+        if (pipeline == null) return;
+        foreach (var entry in pipeline)
+        {
+            var stageName = entry["stage"]?.ToString();
+            foreach (var (stage, completedAt) in stages)
+                if (stage == stageName) entry["completed_at"] = completedAt;
+        }
+    }
+
+    private static void SetAgingDates(string sku, int weeksInStock, string nextInboundDateOrNull)
+    {
+        foreach (var item in Aging)
+        {
+            if (item["sku"]?.ToString() != sku) continue;
+            item["received_date"] = D(-weeksInStock * 7);
+            if (item["inbound_po"]?.Value<bool>() == true)
+                item["next_inbound_date"] = nextInboundDateOrNull;
+            return;
+        }
+    }
 
     // ── Tool Registration ───────────────────────────────────────────────
 
