@@ -74,19 +74,18 @@ arrays (no shell string interpolation), resolves paths with `node:path`, and rea
 
 3. **Re-attach the MCP tools** — the one manual UI step (~2 min). The script
    also prints these instructions at the end of the run.
-
    1. Open **Copilot Studio** (https://copilotstudio.microsoft.com/) in the deployed env.
    2. For **each** agent below: open it, go to **Tools → Add a tool → Model Context
       Protocol (MCP)**, search the connector by name, pick **`<Name> Server`**, select
       the **existing Connected connection** (the picker pre-selects it — do not create a
       new one), **Add**, then **Save and publish**.
 
-      | Agent | MCP server(s) to add |
-      | --- | --- |
-      | Store Policy Agent | Policy RAG MCP v2 |
-      | Inventory & Fulfillment Agent | Warehouse MCP |
-      | Returns & Service Assistant | Membership MCP v2 |
-      | Store Associate Assistant | Order Management MCP **and** Membership MCP v2 |
+      | Agent                         | MCP server(s) to add                           |
+      | ----------------------------- | ---------------------------------------------- |
+      | Store Policy Agent            | Policy RAG MCP v2                              |
+      | Inventory & Fulfillment Agent | Warehouse MCP                                  |
+      | Returns & Service Assistant   | Membership MCP v2                              |
+      | Store Associate Assistant     | Order Management MCP **and** Membership MCP v2 |
 
    That is 5 attachments total. See [Manual post-install step](#manual-post-install-step-required-2-min)
    for why this can't be scripted.
@@ -102,25 +101,29 @@ arrays (no shell string interpolation), resolves paths with `node:path`, and rea
   `DOTNET_ROOT` pointing at a .NET runtime; the script defaults to `$DOTNET_ROOT`
   or `~/.dotnet`, or pass `--dotnet-root <path>`.
 - **az CLI** installed. You do **not** need to log in first: the script reads the
-  tenant from the pac profile you pick and runs `az login --tenant <that tenant>`
-  for you if az isn't already signed in to it. az is used for the REST calls pac
-  cannot make (BAP no-auth connection creation, and the Dataverse import /
+  tenant from the selected Dataverse environment (falling back to the pac profile)
+  and runs `az login --tenant <that tenant>` for you if az isn't already signed in
+  to it. Before making any changes, the script calls Dataverse `WhoAmI` with the
+  Azure token and stops if that exact access check fails. az is used for the REST
+  calls pac cannot make (BAP no-auth connection creation, and the Dataverse import /
   connector / publish verification calls).
 
 ## Options
 
-| Flag | Meaning |
-| --- | --- |
-| `--env-id <guid>` / `--env-url <url>` | Target env. Omit and the script offers the profile's connected env as the default, or lets you filter the (often huge) env list by a name/url substring. |
-| `--profile <n>` | pac auth list index to use. Omit to choose interactively. |
-| `--start-at <step>` | Resume at `import`, `connectors`, `connections`, `publish` or `manual`. |
-| `--connectors-only` | Import + deploy only the connectors solution — skips the agents solution, agent publish, and manual re-attach step. |
-| `--yes` | Do not pause for confirmations (non-interactive / CI). |
-| `--dotnet-root <path>` | Set `DOTNET_ROOT` for the pac child processes. |
-| `-h`, `--help` | Print usage and exit. |
+| Flag                                  | Meaning                                                                                                                                                                 |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--env-id <guid>` / `--env-url <url>` | Target env. Omit and the script offers the profile's connected env as the default, or lets you filter the (often huge) env list by a name/url substring.                |
+| `--profile <n>`                       | pac auth list index to use. Omit to choose interactively.                                                                                                               |
+| `--start-at <step>`                   | Resume at `import`, `connectors`, `connections`, `publish` or `manual`. Before resuming an operational step, missing prerequisite solutions are imported automatically. |
+| `--connectors-only`                   | Import + deploy only the connectors solution — skips the agents solution, agent publish, and manual re-attach step.                                                     |
+| `--yes`                               | Do not pause for confirmations (non-interactive / CI).                                                                                                                  |
+| `--dotnet-root <path>`                | Set `DOTNET_ROOT` for the pac child processes.                                                                                                                          |
+| `-h`, `--help`                        | Print usage and exit.                                                                                                                                                   |
 
 Every step is idempotent and re-runnable, so if a run dies partway you can re-run
-the whole thing or jump back in with `--start-at`.
+the whole thing or jump back in with `--start-at`. A resumed run checks that both
+solution prerequisites exist and imports only those that are missing, preventing a
+partial first import from surfacing later as a misleading connector or bot error.
 
 Unattended into a known env (non-interactive / CI):
 
@@ -146,10 +149,10 @@ node deploy/deploy.mjs \
 
 The demo ships as **two solutions** that import in order:
 
-| # | Solution (zip) | Imports as unique name | Carries |
-| --- | --- | --- | --- |
-| 1 | `BlastBoxConnectors_1_0_0_1.zip` | `BlastBoxConnectors` | the 4 custom MCP connectors |
-| 2 | `BlastBoxAgents_1_0_0_1.zip` | `BlastBoxDeploy` | the 4 agents + their Python skills |
+| #   | Solution (zip)                   | Imports as unique name | Carries                            |
+| --- | -------------------------------- | ---------------------- | ---------------------------------- |
+| 1   | `BlastBoxConnectors_1_0_0_1.zip` | `BlastBoxConnectors`   | the 4 custom MCP connectors        |
+| 2   | `BlastBoxAgents_1_0_0_1.zip`     | `BlastBoxDeploy`       | the 4 agents + their Python skills |
 
 Both zips are committed under `sample/solution/`, and each is also **unpacked**
 into `sample/solution/src/<UniqueName>/` so the solution contents are reviewable
@@ -164,7 +167,9 @@ Run steps:
    each import is allowed to fully **settle** (polling `importjobs` for
    `completedon`) before the next one starts — otherwise the second import is
    rejected with "a previous Import is still running". Retries with backoff handle
-   the EU function-app capacity error.
+   the EU function-app capacity error. If pac reports success but server-side
+   verification disagrees, the deploy stops rather than importing the same solution
+   repeatedly.
 2. **Connectors:** deploy each MCP connector's inline `.csx` from the bundled files
    in `sample/solution/connectors/<slug>/` (import registers the connectors but does
    **not** compile their code). Each is `pac connector update`-d and verified by
