@@ -26,6 +26,7 @@
 //   node deploy/deploy.mjs --profile 3           # preselect pac auth index
 //   node deploy/deploy.mjs --yes                 # don't pause for confirmations
 //   node deploy/deploy.mjs --start-at connectors # resume: import|connectors|connections|publish|manual
+//   node deploy/deploy.mjs --connectors-only     # import + deploy ONLY the connectors solution
 
 import { spawnSync, spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
@@ -55,6 +56,7 @@ const OPT = {
   dotnetRoot: getArg('dotnet-root'),
   startAt: getArg('start-at') || 'import',
   yes: hasFlag('yes'),
+  connectorsOnly: hasFlag('connectors-only'),
 };
 
 // ---------- help ----------
@@ -75,6 +77,8 @@ OPTIONS
   --profile <index>        pac auth list index to use (skips the profile picker).
   --dotnet-root <path>     .NET install dir for pac (auto-detected; overrides it).
   --start-at <step>        Resume from a step: ${['import', 'connectors', 'connections', 'publish', 'manual'].join(' | ')}.
+  --connectors-only        Import + deploy ONLY the connectors solution (skip the
+                           agents solution, agent publish, and manual re-attach step).
   --yes                    Don't pause for confirmations (non-interactive / CI).
   -h, --help               Show this help and exit.
 
@@ -92,6 +96,9 @@ EXAMPLES
 
   # Re-run just the connector-code step after a transient failure:
   node deploy/deploy.mjs --start-at connectors
+
+  # Deploy only the connectors (no agents) into a known env:
+  node deploy/deploy.mjs --connectors-only --env-id <guid> --env-url https://org123.crm.dynamics.com/ --yes
 `);
 }
 if (hasFlag('help') || argv.includes('-h')) { printUsage(); process.exit(0); }
@@ -302,6 +309,32 @@ async function selectProfile() {
   return chosen;
 }
 
+// pac stores each auth profile's OAuth tokens in an MSAL cache (libsecret keyring on
+// Linux). When that cache is empty or expired — common on remote/headless boxes and
+// after a token lifetime lapses — the profile still LISTS (`pac auth list` reads only
+// metadata) but every org-touching command dies with "No token cache item found of
+// UNIVERSAL kind", so pac can neither import the solution nor update connectors. pac
+// cannot refresh this silently; the user has to sign in again. We detect the dead
+// cache and re-run `pac auth create` (device code) against the TARGET org, which both
+// repopulates the token and connects pac to the env in one step.
+function pacTokenAlive() {
+  const r = sh('pac', ['org', 'who']);
+  return r.code === 0
+    && !/No token cache item|Failed to connect to Dataverse|not configured correctly/i.test(r.out);
+}
+async function ensurePacAuth(env) {
+  if (pacTokenAlive()) { ok('pac sign-in token is valid.'); return; }
+  warn('The selected pac profile has no usable token (its sign-in cache is empty or expired).');
+  log(`Re-authenticating pac against ${env.url} (device code — follow the printed URL/code)...`);
+  // Interactive device-code sign-in; --environment also makes the target the active org.
+  const r = shInteractive('pac', ['auth', 'create', '--deviceCode', '--environment', env.url]);
+  if (r.code !== 0 || !pacTokenAlive()) {
+    die(`pac sign-in did not complete. Re-authenticate manually, then re-run the deploy:\n` +
+        `  pac auth create --deviceCode --environment ${env.url}`);
+  }
+  ok('pac re-authenticated and connected to the target org.');
+}
+
 // The az tokens (Dataverse + BAP) must come from the SAME Entra tenant that owns
 // the target env, or the REST calls 401. pac doesn't expose the tenant GUID, but the
 // active profile's account domain IS a valid `az login --tenant` value, so we use it
@@ -490,7 +523,11 @@ async function stepImport(env) {
   // settle, then the agents-only solution. Order matters — the agents reference
   // the connectors by id, and back-to-back imports collide if the first hasn't
   // finished finalizing (handled by awaitImportSettled).
-  for (const sol of manifest.solutions) await importOne(env, sol);
+  // --connectors-only imports just the connectors solution.
+  const solutions = OPT.connectorsOnly
+    ? manifest.solutions.filter((s) => s.kind === 'connectors')
+    : manifest.solutions;
+  for (const sol of solutions) await importOne(env, sol);
   log(`Waiting ${manifest.apimPropagationSeconds}s for APIM propagation`);
   await sleep(manifest.apimPropagationSeconds * 1000);
   ok('Import step complete.');
@@ -713,6 +750,9 @@ async function main() {
 
   // verify we can mint a Dataverse token for this env (right az tenant)
   azToken(dvResource(env.url));
+  // pac needs a live sign-in token to import the solution / update connectors; the
+  // profile's cache can be empty/expired (esp. on remote boxes) — re-auth if so.
+  await ensurePacAuth(env);
   ok(`Ready to deploy into: ${env.name} ${env.url}`);
   if (!(await confirm('Proceed?'))) die('aborted by user');
 
@@ -720,6 +760,14 @@ async function main() {
   if (from <= 0) await stepImport(env);
   if (from <= 1) await stepConnectors(env);
   if (from <= 2) await stepConnections(env);
+
+  // --connectors-only stops here: no agents solution, so nothing to publish or re-attach.
+  if (OPT.connectorsOnly) {
+    ok(`CONNECTORS DEPLOY COMPLETE — ${env.url}`);
+    log('Skipped agent publish + manual re-attach (--connectors-only).');
+    return;
+  }
+
   if (from <= 3) await stepPublish(env);
 
   ok(`DEPLOY COMPLETE — ${env.url}`);

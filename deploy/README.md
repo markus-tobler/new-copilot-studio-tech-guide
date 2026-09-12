@@ -31,6 +31,18 @@ Set the `BLASTBOX_REF` env var to deploy from a branch or tag other than `main`.
 still need the [requirements](#requirements) below — Node 18+, the pac CLI signed in,
 and the az CLI.
 
+To pass options (e.g. `--connectors-only`, `--env-id`) through the one-liners:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/microsoft/new-copilot-studio-tech-guide/main/deploy/install.sh \
+  | bash -s -- --connectors-only --env-id <guid> --env-url https://<org>.crm.dynamics.com/ --yes
+```
+
+```powershell
+irm https://raw.githubusercontent.com/microsoft/new-copilot-studio-tech-guide/main/deploy/install.ps1 -OutFile install.ps1
+./install.ps1 --connectors-only --env-id <guid> --env-url https://<org>.crm.dynamics.com/ --yes
+```
+
 ### Prefer to clone?
 
 Everything the script needs is committed in the repo, so a clone works too:
@@ -102,6 +114,7 @@ arrays (no shell string interpolation), resolves paths with `node:path`, and rea
 | `--env-id <guid>` / `--env-url <url>` | Target env. Omit and the script offers the profile's connected env as the default, or lets you filter the (often huge) env list by a name/url substring. |
 | `--profile <n>` | pac auth list index to use. Omit to choose interactively. |
 | `--start-at <step>` | Resume at `import`, `connectors`, `connections`, `publish` or `manual`. |
+| `--connectors-only` | Import + deploy only the connectors solution — skips the agents solution, agent publish, and manual re-attach step. |
 | `--yes` | Do not pause for confirmations (non-interactive / CI). |
 | `--dotnet-root <path>` | Set `DOTNET_ROOT` for the pac child processes. |
 | `-h`, `--help` | Print usage and exit. |
@@ -113,6 +126,17 @@ Unattended into a known env (non-interactive / CI):
 
 ```bash
 node deploy/deploy.mjs \
+  --env-id <env-guid> \
+  --env-url https://<org>.crm.dynamics.com/ \
+  --yes
+```
+
+Deploy only the connectors (no agents), e.g. to refresh connector code without
+touching the agents solution:
+
+```bash
+node deploy/deploy.mjs \
+  --connectors-only \
   --env-id <env-guid> \
   --env-url https://<org>.crm.dynamics.com/ \
   --yes
