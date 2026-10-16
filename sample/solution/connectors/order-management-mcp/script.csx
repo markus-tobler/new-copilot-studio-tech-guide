@@ -95,7 +95,7 @@ public class Script : ScriptBase
         SetField(Orders, "id", "ORD-10460", "date", D(0));
         SetField(Orders, "id", "ORD-10389", "date", D(-21));
         SetField(Orders, "id", "ORD-10478", "date", D(-4));
-        SetField(Orders, "id", "ORD-10502", "date", D(52));
+        SetField(Orders, "id", "ORD-10502", "date", D(-9));
 
         SetShipmentDates("ORD-10421", D(4), Dt(2, 14, 30));
         SetShipmentDates("ORD-10455", D(3), Dt(1, 9, 15));

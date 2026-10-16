@@ -159,13 +159,13 @@ public class Script : ScriptBase
             ("handed_to_carrier", Dt(-4, 15, 0))
         });
 
-        SetField(Restock, "sku", "SKU-OMEGA", "next_shipment_date", D(54));
+        SetField(Restock, "sku", "SKU-OMEGA", "next_shipment_date", D(4));
         SetField(Restock, "sku", "SKU-LUMI", "next_shipment_date", D(4));
         SetField(Restock, "sku", "SKU-VORTEX", "next_shipment_date", D(10));
         SetField(Restock, "sku", "SKU-APEX5", "next_shipment_date", D(17));
         SetField(Restock, "sku", "SKU-COMFT", "next_shipment_date", D(12));
 
-        SetAgingDates("SKU-OMEGA-MEGA", 3, D(7));
+        SetAgingDates("SKU-OMEGA-MEGA", 3, D(3));
         SetAgingDates("SKU-MEGALIZARDS", 4, D(4));
         SetAgingDates("SKU-PULSE-CTRL", 5, D(12));
         SetAgingDates("SKU-OMEGA-CORE", 16, null);
